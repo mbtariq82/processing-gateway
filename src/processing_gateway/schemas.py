@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from processing_gateway.domain import PaymentStatus
+from processing_gateway.domain import PaymentStatus, ReconciliationStatus
 
 
 class HealthResponse(BaseModel):
@@ -49,6 +49,18 @@ class SignatureResponse(BaseModel):
     signature: str
 
 
+class ProviderStatementRecordRequest(BaseModel):
+    payment_id: str
+    amount: Decimal = Field(gt=0)
+    status: PaymentStatus
+    provider_reference: str | None = None
+
+
+class ReconciliationRequest(BaseModel):
+    records: list[ProviderStatementRecordRequest]
+    auto_resolve: bool = True
+
+
 class AuditEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,3 +97,19 @@ class WebhookEventResponse(BaseModel):
     status: PaymentStatus
     processed: bool
     received_at: datetime
+
+
+class ReconciliationItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    payment_id: str
+    status: ReconciliationStatus
+    details: dict[str, str]
+
+
+class ReconciliationReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    items: list[ReconciliationItemResponse]

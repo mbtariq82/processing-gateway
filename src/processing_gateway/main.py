@@ -6,11 +6,13 @@ from fastapi.responses import JSONResponse
 from processing_gateway.domain import (
     GatewayError,
     NotFoundError,
+    ProviderStatementRecord,
     SignatureError,
     StateTransitionError,
     ValidationError,
 )
 from processing_gateway.payment_service import PaymentService
+from processing_gateway.reconciliation import ReconciliationService
 from processing_gateway.repository import PaymentRepository
 from processing_gateway.schemas import (
     ConfirmPaymentRequest,
@@ -18,6 +20,9 @@ from processing_gateway.schemas import (
     InitiatePaymentRequest,
     MoneyOperationRequest,
     PaymentResponse,
+    ProviderStatementRecordRequest,
+    ReconciliationReportResponse,
+    ReconciliationRequest,
     SignatureRequest,
     SignatureResponse,
     WebhookEventResponse,
@@ -30,6 +35,7 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
     repository = repository or PaymentRepository()
     payment_service = PaymentService(repository)
     webhook_service = WebhookService(repository, payment_service)
+    reconciliation_service = ReconciliationService(repository, payment_service)
 
     app = FastAPI(
         title="Processing Gateway",
@@ -39,6 +45,7 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
     app.state.repository = repository
     app.state.payment_service = payment_service
     app.state.webhook_service = webhook_service
+    app.state.reconciliation_service = reconciliation_service
 
     @app.exception_handler(GatewayError)
     async def handle_gateway_error(_request: Request, exc: GatewayError) -> JSONResponse:
@@ -117,7 +124,27 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
         )
         return WebhookEventResponse.model_validate(event)
 
+    @app.post("/reconciliation", response_model=ReconciliationReportResponse)
+    def reconcile(payload: ReconciliationRequest) -> ReconciliationReportResponse:
+        records = [
+            _provider_record_from_request(record)
+            for record in payload.records
+        ]
+        report = reconciliation_service.reconcile(records, auto_resolve=payload.auto_resolve)
+        return ReconciliationReportResponse.model_validate(report)
+
     return app
+
+
+def _provider_record_from_request(
+    payload: ProviderStatementRecordRequest,
+) -> ProviderStatementRecord:
+    return ProviderStatementRecord(
+        payment_id=payload.payment_id,
+        amount=payload.amount,
+        status=payload.status,
+        provider_reference=payload.provider_reference,
+    )
 
 
 app = create_app()
