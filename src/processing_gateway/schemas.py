@@ -30,6 +30,25 @@ class MoneyOperationRequest(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=120)
 
 
+class WebhookPayload(BaseModel):
+    event_id: str = Field(min_length=1, max_length=120)
+    payment_id: str = Field(min_length=1, max_length=120)
+    event_type: str = Field(min_length=1, max_length=80)
+    status: PaymentStatus
+    signature: str = Field(min_length=1)
+    provider_reference: str | None = Field(default=None, max_length=120)
+
+
+class SignatureRequest(BaseModel):
+    event_id: str
+    payment_id: str
+    status: PaymentStatus
+
+
+class SignatureResponse(BaseModel):
+    signature: str
+
+
 class AuditEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,3 +74,14 @@ class PaymentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     audit_log: list[AuditEntryResponse]
+
+
+class WebhookEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: str
+    payment_id: str
+    event_type: str
+    status: PaymentStatus
+    processed: bool
+    received_at: datetime

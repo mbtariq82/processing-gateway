@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from processing_gateway.domain import (
     GatewayError,
     NotFoundError,
+    SignatureError,
     StateTransitionError,
     ValidationError,
 )
@@ -17,12 +18,18 @@ from processing_gateway.schemas import (
     InitiatePaymentRequest,
     MoneyOperationRequest,
     PaymentResponse,
+    SignatureRequest,
+    SignatureResponse,
+    WebhookEventResponse,
+    WebhookPayload,
 )
+from processing_gateway.webhook_service import WebhookService
 
 
 def create_app(repository: PaymentRepository | None = None) -> FastAPI:
     repository = repository or PaymentRepository()
     payment_service = PaymentService(repository)
+    webhook_service = WebhookService(repository, payment_service)
 
     app = FastAPI(
         title="Processing Gateway",
@@ -31,6 +38,7 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
     )
     app.state.repository = repository
     app.state.payment_service = payment_service
+    app.state.webhook_service = webhook_service
 
     @app.exception_handler(GatewayError)
     async def handle_gateway_error(_request: Request, exc: GatewayError) -> JSONResponse:
@@ -41,6 +49,8 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
             status_code = status.HTTP_409_CONFLICT
         elif isinstance(exc, ValidationError):
             status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        elif isinstance(exc, SignatureError):
+            status_code = status.HTTP_401_UNAUTHORIZED
         return JSONResponse(status_code=status_code, content={"detail": str(exc)})
 
     @app.get("/health", response_model=HealthResponse)
@@ -88,6 +98,24 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
     @app.post("/payments/{payment_id}/void", response_model=PaymentResponse)
     def void_payment(payment_id: str) -> PaymentResponse:
         return PaymentResponse.model_validate(payment_service.void(payment_id))
+
+    @app.post("/webhooks/signature", response_model=SignatureResponse)
+    def create_signature(payload: SignatureRequest) -> SignatureResponse:
+        return SignatureResponse(
+            signature=webhook_service.sign(payload.event_id, payload.payment_id, payload.status)
+        )
+
+    @app.post("/webhooks/provider", response_model=WebhookEventResponse)
+    def provider_webhook(payload: WebhookPayload) -> WebhookEventResponse:
+        event = webhook_service.process(
+            payload.event_id,
+            payload.payment_id,
+            payload.event_type,
+            payload.status,
+            payload.signature,
+            payload.provider_reference,
+        )
+        return WebhookEventResponse.model_validate(event)
 
     return app
 
