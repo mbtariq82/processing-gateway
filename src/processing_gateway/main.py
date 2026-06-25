@@ -55,7 +55,7 @@ def create_app(repository: PaymentRepository | None = None) -> FastAPI:
         elif isinstance(exc, StateTransitionError):
             status_code = status.HTTP_409_CONFLICT
         elif isinstance(exc, ValidationError):
-            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+            status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
         elif isinstance(exc, SignatureError):
             status_code = status.HTTP_401_UNAUTHORIZED
         return JSONResponse(status_code=status_code, content={"detail": str(exc)})
